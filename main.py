@@ -4,45 +4,61 @@ import pandas as pd
 
 app = FastAPI()
 
-# 🔑 REPLACE THESE
+# 🔑 ADD YOUR DETAILS
 TOKEN = "8731437941:AAGc5Y0EE-dzqv2DKofxfisaJmyxrpeEdqU"
 CHAT_ID = "8239286737"
 
 
-# 📩 TELEGRAM ALERT FUNCTION
+# 📩 TELEGRAM ALERT
 def send_alert(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
 
-# 📊 GET LIVE DATA FROM COINGECKO (WORKS IN INDIA)
+# 📊 SAFE DATA FETCH FROM COINGECKO
 def get_data():
     url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
 
     params = {
         "vs_currency": "usd",
-        "days": "1",
-        "interval": "minute"
+        "days": "1"
     }
 
-    response = requests.get(url)
+    headers = {
+        "accept": "application/json",
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+    except Exception as e:
+        return {"error": f"Request failed: {str(e)}"}
+
+    # Debug info
+    print("Status:", response.status_code)
+    print("Response:", response.text[:200])
+
+    if response.status_code != 200:
+        return {"error": f"API error: {response.status_code}", "data": response.text}
 
     try:
         data = response.json()
     except:
-        return {"error": "Invalid JSON response"}
+        return {"error": "Invalid JSON response", "raw": response.text[:200]}
 
     if "prices" not in data:
         return {"error": "Invalid data format", "data": data}
 
     prices = data["prices"]
 
+    if not prices or len(prices) < 2:
+        return {"error": "Not enough data from API"}
+
     df = pd.DataFrame(prices, columns=["time", "price"])
 
     if df.empty:
-        return {"error": "Empty data"}
+        return {"error": "Empty DataFrame"}
 
-    # Use price as close
     df["close"] = df["price"]
 
     return df
@@ -57,9 +73,6 @@ def run():
         return result
 
     df = result
-
-    if len(df) < 2:
-        return {"error": "Not enough data"}
 
     last = df.iloc[-1]["close"]
     prev = df.iloc[-2]["close"]
@@ -83,7 +96,7 @@ Timeframe: 5 min
     return {"signal": signal}
 
 
-# 🏠 HOME ROUTE
+# 🏠 HOME CHECK
 @app.get("/")
 def home():
     return {"status": "Bot is running"}
