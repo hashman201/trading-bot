@@ -1,21 +1,19 @@
 from fastapi import FastAPI
 import requests
 import pandas as pd
+import ta
 
 app = FastAPI()
 
-# 🔑 ADD YOUR DETAILS
-TOKEN = "8731437941:AAGc5Y0EE-dzqv2DKofxfisaJmyxrpeEdqU"
-CHAT_ID = "8239286737"
+TOKEN = "YOUR_TOKEN"
+CHAT_ID = "YOUR_CHAT_ID"
 
 
-# 📩 TELEGRAM ALERT
 def send_alert(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
 
-# 📊 SAFE DATA FETCH FROM COINGECKO
 def get_data():
     url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
 
@@ -29,74 +27,64 @@ def get_data():
         "User-Agent": "Mozilla/5.0"
     }
 
-    try:
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-    except Exception as e:
-        return {"error": f"Request failed: {str(e)}"}
+    response = requests.get(url, params=params, headers=headers)
 
-    # Debug info
-    print("Status:", response.status_code)
-    print("Response:", response.text[:200])
-
-    if response.status_code != 200:
-        return {"error": f"API error: {response.status_code}", "data": response.text}
-
-    try:
-        data = response.json()
-    except:
-        return {"error": "Invalid JSON response", "raw": response.text[:200]}
+    data = response.json()
 
     if "prices" not in data:
-        return {"error": "Invalid data format", "data": data}
+        return None
 
-    prices = data["prices"]
-
-    if not prices or len(prices) < 2:
-        return {"error": "Not enough data from API"}
-
-    df = pd.DataFrame(prices, columns=["time", "price"])
-
-    if df.empty:
-        return {"error": "Empty DataFrame"}
+    df = pd.DataFrame(data["prices"], columns=["time", "price"])
 
     df["close"] = df["price"]
 
     return df
 
 
-# 🚀 MAIN BOT
 @app.get("/run")
 def run():
-    result = get_data()
+    df = get_data()
 
-    if isinstance(result, dict):
-        return result
+    if df is None or len(df) < 20:
+        return {"error": "Not enough data"}
 
-    df = result
+    # 📊 INDICATORS
+    df["ema20"] = ta.trend.EMAIndicator(df["close"], window=20).ema_indicator()
+    df["rsi"] = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
 
-    last = df.iloc[-1]["close"]
-    prev = df.iloc[-2]["close"]
+    latest = df.iloc[-1]
 
-    if last > prev:
+    signal = "NO TRADE"
+
+    # 🧠 SMART LOGIC
+    if latest["close"] > latest["ema20"] and latest["rsi"] < 40:
         signal = "CALL 📈"
-    else:
+
+    elif latest["close"] < latest["ema20"] and latest["rsi"] > 60:
         signal = "PUT 📉"
 
-    message = f"""
-📊 LIVE SIGNAL
+    # 🚫 Only send strong signals
+    if signal != "NO TRADE":
+        message = f"""
+🚀 SMART SIGNAL
 
 Asset: BTC
 Signal: {signal}
-Price: {last}
-Timeframe: 5 min
+Price: {latest['close']}
+RSI: {round(latest['rsi'],2)}
+Trend EMA20: {round(latest['ema20'],2)}
+Timeframe: 5–15 min
 """
 
-    send_alert(message)
+        send_alert(message)
 
-    return {"signal": signal}
+    return {
+        "signal": signal,
+        "price": latest["close"],
+        "rsi": latest["rsi"]
+    }
 
 
-# 🏠 HOME CHECK
 @app.get("/")
 def home():
-    return {"status": "Bot is running"}
+    return {"status": "Smart bot running"}
