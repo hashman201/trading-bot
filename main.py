@@ -3,8 +3,8 @@ import requests
 
 app = FastAPI()
 
-TOKEN = "YOUR_TOKEN"
-CHAT_ID = "YOUR_CHAT_ID"
+TOKEN = "8731437941:AAGc5Y0EE-dzqv2DKofxfisaJmyxrpeEdqU"
+CHAT_ID = "8239286737"
 
 def send_alert(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
