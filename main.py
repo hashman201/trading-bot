@@ -4,52 +4,74 @@ import pandas as pd
 
 app = FastAPI()
 
+# 🔑 REPLACE THESE WITH YOUR VALUES
 TOKEN = "8731437941:AAGc5Y0EE-dzqv2DKofxfisaJmyxrpeEdqU"
 CHAT_ID = "8239286737"
 
+
+# 📩 SEND TELEGRAM ALERT
 def send_alert(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
-# Get last 50 candles (5 min each)
+
+# 📊 FETCH MARKET DATA (SAFE VERSION)
 def get_data():
     url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=50"
-    data = requests.get(url).json()
+    
+    response = requests.get(url)
 
-    df = pd.DataFrame(data)
+    # Debug info (visible in Render logs)
+    print("Status Code:", response.status_code)
+    print("Raw Data:", response.text[:200])  # first 200 chars only
+
+    try:
+        data = response.json()
+    except:
+        return {"error": "Invalid JSON response"}
+
+    # Check if correct format
+    if not isinstance(data, list):
+        return {"error": "API did not return list", "data": data}
+
+    # Convert to DataFrame safely
+    try:
+        df = pd.DataFrame(data)
+    except Exception as e:
+        return {"error": f"DataFrame error: {str(e)}"}
+
+    if df.empty:
+        return {"error": "Empty DataFrame"}
+
+    # Keep required columns
     df = df.iloc[:, :5]
-    df.columns = ["time","open","high","low","close"]
-    df = df.astype(float)
+    df.columns = ["time", "open", "high", "low", "close"]
+
+    try:
+        df["open"] = df["open"].astype(float)
+        df["high"] = df["high"].astype(float)
+        df["low"] = df["low"].astype(float)
+        df["close"] = df["close"].astype(float)
+    except Exception as e:
+        return {"error": f"Conversion error: {str(e)}"}
 
     return df
 
+
+# 🚀 MAIN BOT ROUTE
 @app.get("/run")
 def run():
-    try:
-        df = get_data()
+    result = get_data()
 
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
+    # If error returned, show it
+    if isinstance(result, dict):
+        return result
 
-        if last['close'] > prev['close']:
-            signal = "CALL 📈"
-        else:
-            signal = "PUT 📉"
+    df = result
 
-        message = f"""
-📊 LIVE SIGNAL
-
-Signal: {signal}
-Price: {last['close']}
-"""
-
-        send_alert(message)
-
-        return {"signal": signal}
-
-    except Exception as e:
-        return {"error": str(e)}
-    df = get_data()
+    # Ensure enough data
+    if len(df) < 2:
+        return {"error": "Not enough data"}
 
     last = df.iloc[-1]
     prev = df.iloc[-2]
@@ -72,3 +94,9 @@ Timeframe: 5 min
     send_alert(message)
 
     return {"signal": signal}
+
+
+# 🏠 HOME ROUTE (FOR TEST)
+@app.get("/")
+def home():
+    return {"status": "Bot is running"}
