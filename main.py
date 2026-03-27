@@ -25,6 +25,30 @@ def get_data():
 
 @app.get("/run")
 def run():
+    try:
+        df = get_data()
+
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        if last['close'] > prev['close']:
+            signal = "CALL 📈"
+        else:
+            signal = "PUT 📉"
+
+        message = f"""
+📊 LIVE SIGNAL
+
+Signal: {signal}
+Price: {last['close']}
+"""
+
+        send_alert(message)
+
+        return {"signal": signal}
+
+    except Exception as e:
+        return {"error": str(e)}
     df = get_data()
 
     last = df.iloc[-1]
